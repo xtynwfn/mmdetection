@@ -34,8 +34,8 @@ class ImageTransform(object):
         else:
             img, w_scale, h_scale = mmcv.imresize(
                 img, scale, return_scale=True)
-            scale_factor = np.array(
-                [w_scale, h_scale, w_scale, h_scale], dtype=np.float32)
+            scale_factor = np.array([w_scale, h_scale, w_scale, h_scale],
+                                    dtype=np.float32)
         img_shape = img.shape
         img = mmcv.imnormalize(img, self.mean, self.std, self.to_rgb)
         if flip:
@@ -47,6 +47,90 @@ class ImageTransform(object):
             pad_shape = img_shape
         img = img.transpose(2, 0, 1)
         return img, img_shape, pad_shape, scale_factor
+
+
+class ResizeCropImageTransform(object):
+
+    def __init__(self,
+                 out_size,
+                 mean=(0, 0, 0),
+                 std=(1, 1, 1),
+                 to_rgb=True,
+                 fixed_size_padding=False,
+                 size_divisor=None):
+        self.mean = np.array(mean, dtype=np.float32)
+        self.std = np.array(std, dtype=np.float32)
+        self.out_size = out_size
+        self.to_rgb = to_rgb
+        self.size_divisor = size_divisor
+        self.fixed_size_padding = fixed_size_padding
+
+    def __call__(self, img, scale, flip=False, keep_ratio=True):
+        rescaled_size = (int(self.out_size[0] * scale),
+                         int(self.out_size[1] * scale))
+        if keep_ratio:
+            img, scale_factor = mmcv.imrescale(
+                img, rescaled_size, return_scale=True)
+        margin_h = max(img.shape[0] - self.out_size[0], 0)
+        margin_w = max(img.shape[1] - self.out_size[1], 0)
+        offset_h = np.random.randint(0, margin_h + 1)
+        offset_w = np.random.randint(0, margin_w + 1)
+        crop_offset = (offset_w, offset_h)
+
+        img = img[offset_h:offset_h + self.out_size[0], offset_w:offset_w +
+                  self.out_size[1], :]
+
+        img_shape = img.shape
+        img = mmcv.imnormalize(img, self.mean, self.std, self.to_rgb)
+        if flip:
+            img = mmcv.imflip(img)
+        if self.fixed_size_padding:
+            img = mmcv.impad(img, self.out_size)
+            pad_shape = img.shape
+        elif self.size_divisor is not None:
+            img = mmcv.impad_to_multiple(img, self.size_divisor)
+            pad_shape = img.shape
+        else:
+            pad_shape = img_shape
+        img = img.transpose(2, 0, 1)
+        return img, img_shape, pad_shape, scale_factor, crop_offset
+
+
+class ResizeCropBboxTransform(object):
+
+    def __init__(self, out_size, max_num_gts=None):
+        self.out_size = out_size
+        self.max_num_gts = max_num_gts
+
+    def __call__(self,
+                 bboxes,
+                 img_shape,
+                 scale_factor,
+                 crop_offset,
+                 flip=False):
+        gt_bboxes = bboxes * scale_factor
+        # crop bboxes
+        gt_bboxes -= np.array(
+            [crop_offset[0], crop_offset[1], crop_offset[0], crop_offset[1]],
+            dtype=np.float32)
+
+        gt_bboxes[:, 2:] = np.minimum(gt_bboxes[:, 2:],
+                                      (img_shape[1], img_shape[0]))
+
+        if flip:
+            gt_bboxes = bbox_flip(gt_bboxes, img_shape)
+        gt_bboxes[:, 0::2] = np.clip(gt_bboxes[:, 0::2], 0, img_shape[1] - 1)
+        gt_bboxes[:, 1::2] = np.clip(gt_bboxes[:, 1::2], 0, img_shape[0] - 1)
+        valid_inds = (gt_bboxes[:, 2] > gt_bboxes[:, 0]) & (
+            gt_bboxes[:, 3] > gt_bboxes[:, 1])
+        gt_bboxes = gt_bboxes[valid_inds, :]
+        if self.max_num_gts is None:
+            return gt_bboxes
+        else:
+            num_gts = gt_bboxes.shape[0]
+            padded_bboxes = np.zeros((self.max_num_gts, 4), dtype=np.float32)
+            padded_bboxes[:num_gts, :] = gt_bboxes
+            return padded_bboxes
 
 
 def bbox_flip(bboxes, img_shape):

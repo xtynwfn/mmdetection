@@ -18,6 +18,7 @@ class FPN(nn.Module):
                  add_extra_convs=False,
                  extra_convs_on_inputs=True,
                  relu_before_extra_convs=False,
+                 norm_last_only=False,
                  conv_cfg=None,
                  norm_cfg=None,
                  activation=None):
@@ -29,6 +30,7 @@ class FPN(nn.Module):
         self.num_outs = num_outs
         self.activation = activation
         self.relu_before_extra_convs = relu_before_extra_convs
+        self.norm_last_only = norm_last_only
 
         if end_level == -1:
             self.backbone_end_level = self.num_ins
@@ -52,7 +54,7 @@ class FPN(nn.Module):
                 out_channels,
                 1,
                 conv_cfg=conv_cfg,
-                norm_cfg=norm_cfg,
+                norm_cfg=norm_cfg if not self.norm_last_only else None,
                 activation=self.activation,
                 inplace=False)
             fpn_conv = ConvModule(
