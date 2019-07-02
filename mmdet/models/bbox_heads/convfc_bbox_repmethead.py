@@ -1,12 +1,13 @@
 import torch.nn as nn
 
-from .bbox_head import BBoxHead
+from .bbox_repmethead import   BBoxRepMetHead
 from ..registry import HEADS
 from ..utils import ConvModule
+from ..builder import build_loss
 
 
 @HEADS.register_module
-class ConvFCBBoxHead(BBoxHead):
+class ConvFCBBoxRepMetHead(BBoxRepMetHead):
     """More general bbox head, with shared conv and fc layers and two optional
     separated branches.
 
@@ -14,7 +15,6 @@ class ConvFCBBoxHead(BBoxHead):
     shared convs -> shared fcs
                                 \-> reg convs -> reg fcs -> reg
     """  # noqa: W605
-
     def __init__(self,
                  num_shared_convs=0,
                  num_shared_fcs=0,
@@ -28,7 +28,7 @@ class ConvFCBBoxHead(BBoxHead):
                  norm_cfg=None,
                  *args,
                  **kwargs):
-        super(ConvFCBBoxHead, self).__init__(*args, **kwargs)
+        super(ConvFCBBoxRepMetHead, self).__init__(*args, **kwargs)
         assert (num_shared_convs + num_shared_fcs + num_cls_convs +
                 num_cls_fcs + num_reg_convs + num_reg_fcs > 0)
         if num_cls_convs > 0 or num_reg_convs > 0:
@@ -74,7 +74,9 @@ class ConvFCBBoxHead(BBoxHead):
         self.relu = nn.ReLU(inplace=True)
         # reconstruct fc_cls and fc_reg since input channels are changed
         if self.with_cls:
-            self.fc_cls = nn.Linear(self.cls_last_dim, self.num_classes)
+            # self.fc_cls = nn.Linear(self.cls_last_dim, self.num_classes)
+            self.loss_cls_conf['emb_size'] = self.cls_last_dim
+            self.fc_cls = build_loss(self.loss_cls_conf)
         if self.with_reg:
             out_dim_reg = (4 if self.reg_class_agnostic else 4 *
                            self.num_classes)
@@ -122,12 +124,56 @@ class ConvFCBBoxHead(BBoxHead):
         return branch_convs, branch_fcs, last_layer_dim
 
     def init_weights(self):
-        super(ConvFCBBoxHead, self).init_weights()
+        super(ConvFCBBoxRepMetHead, self).init_weights()
         for module_list in [self.shared_fcs, self.cls_fcs, self.reg_fcs]:
             for m in module_list.modules():
                 if isinstance(m, nn.Linear):
                     nn.init.xavier_uniform_(m.weight)
                     nn.init.constant_(m.bias, 0)
+
+
+    def loss(self,
+             x,
+             bbox_pred,
+             labels,
+             label_weights,
+             bbox_targets,
+             bbox_weights,
+             reduction_override=None):
+        # shared part
+        if self.num_shared_convs > 0:
+            for conv in self.shared_convs:
+                x = conv(x)
+
+        if self.num_shared_fcs > 0:
+            if self.with_avg_pool:
+                x = self.avg_pool(x)
+            x = x.view(x.size(0), -1)
+            for fc in self.shared_fcs:
+                x = self.relu(fc(x))
+        # separate branches
+        x_cls = x
+
+
+        for conv in self.cls_convs:
+            x_cls = conv(x_cls)
+        if x_cls.dim() > 2:
+            if self.with_avg_pool:
+                x_cls = self.avg_pool(x_cls)
+            x_cls = x_cls.view(x_cls.size(0), -1)
+        for fc in self.cls_fcs:
+            x_cls = self.relu(fc(x_cls))
+
+        # get class probobility
+        # cls_score = self.fc_cls.inference(x_cls) if self.with_cls else None
+        # python 2.7 vs python 3.6
+        return super().loss(x_cls,
+                            bbox_pred,
+                            labels,
+                            label_weights,
+                            bbox_targets,
+                            bbox_weights,
+                            reduction_override)
 
     def forward(self, x):
         # shared part
@@ -163,17 +209,17 @@ class ConvFCBBoxHead(BBoxHead):
         for fc in self.reg_fcs:
             x_reg = self.relu(fc(x_reg))
 
-        cls_score = self.fc_cls(x_cls) if self.with_cls else None
+        cls_score = self.fc_cls.inference(x_cls) if self.with_cls else None
         bbox_pred = self.fc_reg(x_reg) if self.with_reg else None
         return cls_score, bbox_pred
 
 
 @HEADS.register_module
-class SharedFCBBoxHead(ConvFCBBoxHead):
+class SharedFCRepMetBBoxHead(ConvFCBBoxRepMetHead):
 
     def __init__(self, num_fcs=2, fc_out_channels=1024, *args, **kwargs):
         assert num_fcs >= 1
-        super(SharedFCBBoxHead, self).__init__(
+        super(SharedFCRepMetBBoxHead, self).__init__(
             num_shared_convs=0,
             num_shared_fcs=num_fcs,
             num_cls_convs=0,

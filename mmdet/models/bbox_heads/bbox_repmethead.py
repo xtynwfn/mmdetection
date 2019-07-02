@@ -9,7 +9,7 @@ from ..registry import HEADS
 
 
 @HEADS.register_module
-class BBoxHead(nn.Module):
+class BBoxRepMetHead(nn.Module):
     """Simplest RoI head, with only two fc layers for classification and
     regression respectively"""
 
@@ -24,12 +24,13 @@ class BBoxHead(nn.Module):
                  target_stds=[0.1, 0.1, 0.2, 0.2],
                  reg_class_agnostic=False,
                  loss_cls=dict(
-                     type='CrossEntropyLoss',
+                     k=20,
+                     type='RepMetLoss',
                      use_sigmoid=False,
                      loss_weight=1.0),
                  loss_bbox=dict(
                      type='SmoothL1Loss', beta=1.0, loss_weight=1.0)):
-        super(BBoxHead, self).__init__()
+        super(BBoxRepMetHead, self).__init__()
         assert with_cls or with_reg
         self.with_avg_pool = with_avg_pool
         self.with_cls = with_cls
@@ -37,11 +38,16 @@ class BBoxHead(nn.Module):
         self.roi_feat_size = roi_feat_size
         self.in_channels = in_channels
         self.num_classes = num_classes
+        self.loss_cls_conf = loss_cls
+
+        self.loss_cls_conf['N'] = num_classes - 1
+
         self.target_means = target_means
         self.target_stds = target_stds
         self.reg_class_agnostic = reg_class_agnostic
 
-        self.loss_cls = build_loss(loss_cls)
+
+
         self.loss_bbox = build_loss(loss_bbox)
 
         in_channels = self.in_channels
@@ -49,8 +55,14 @@ class BBoxHead(nn.Module):
             self.avg_pool = nn.AvgPool2d(roi_feat_size)
         else:
             in_channels *= (self.roi_feat_size * self.roi_feat_size)
+        # in_channels in else may modify in_channels
+        self.loss_cls_conf['emb_size'] = in_channels
+
+        self.fc_cls = build_loss(self.loss_cls_conf)
+
         if self.with_cls:
-            self.fc_cls = nn.Linear(in_channels, num_classes)
+            # self.fc_cls = self.loss_cls
+            pass
         if self.with_reg:
             out_dim_reg = 4 if reg_class_agnostic else 4 * num_classes
             self.fc_reg = nn.Linear(in_channels, out_dim_reg)
@@ -58,8 +70,7 @@ class BBoxHead(nn.Module):
 
     def init_weights(self):
         if self.with_cls:
-            nn.init.normal_(self.fc_cls.weight, 0, 0.01)
-            nn.init.constant_(self.fc_cls.bias, 0)
+            self.fc_cls.init_reps()
         if self.with_reg:
             nn.init.normal_(self.fc_reg.weight, 0, 0.001)
             nn.init.constant_(self.fc_reg.bias, 0)
@@ -68,7 +79,7 @@ class BBoxHead(nn.Module):
         if self.with_avg_pool:
             x = self.avg_pool(x)
         x = x.view(x.size(0), -1)
-        cls_score = self.fc_cls(x) if self.with_cls else None
+        cls_score = self.fc_cls.inference(x) if self.with_cls else None
         bbox_pred = self.fc_reg(x) if self.with_reg else None
         return cls_score, bbox_pred
 
@@ -101,13 +112,14 @@ class BBoxHead(nn.Module):
         losses = dict()
         if cls_score is not None:
             avg_factor = max(torch.sum(label_weights > 0).float().item(), 1.)
-            losses['loss_cls'] = self.loss_cls(
+
+            cls_score_true = self.fc_cls.inference(cls_score)
+
+
+            losses['loss_cls'] = self.fc_cls(
                 cls_score,
-                labels,
-                label_weights,
-                avg_factor=avg_factor,
-                reduction_override=reduction_override)
-            losses['acc'] = accuracy(cls_score, labels)
+                labels)
+            losses['acc'] = accuracy(cls_score_true, labels)
         if bbox_pred is not None:
             pos_inds = labels > 0
             if self.reg_class_agnostic:

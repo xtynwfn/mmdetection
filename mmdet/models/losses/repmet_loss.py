@@ -23,8 +23,7 @@ class RepMetLoss(nn.Module):
         self.alpha = alpha
         self.sigma = sigma
 
-        # TODO mod this from hardcoded with the device
-        self.reps = nn.Parameter(F.normalize(torch.randn(N*k, emb_size, dtype=torch.float).cuda()))
+
 
         # assert (use_sigmoid is False) or (use_mask is False)
         self.use_sigmoid = use_sigmoid
@@ -47,8 +46,8 @@ class RepMetLoss(nn.Module):
         # torch.unsqueeze(back_p,1)
         # n_sample * (N_classes+1)
         probs_withback = torch.cat((back_p.unsqueeze(-1),hard_probs), 1)
-        _, pred = probs_withback.max(1)
-        return  pred
+        # cls_score, pred = probs_withback.max(1)
+        return  probs_withback
 
     def forward(self, input, target):
 
@@ -84,7 +83,7 @@ class RepMetLoss(nn.Module):
         # Eqn. 4 of repmet paper
         losses = F.relu(min_cor - min_inc + self.alpha)
 
-        losses_la = torch.where(target == 0, target, losses)
+        losses_la = torch.where(target == 0, torch.zeros(losses.size(),dtype =losses.dtype, device=losses.device),losses)
 
         # mean the sample losses over the batch
         loss_distanc = self.lossdistanc_weight * torch.mean(losses_la)
@@ -118,6 +117,10 @@ class RepMetLoss(nn.Module):
     def get_reps(self):
         return self.reps.data.cpu().detach().numpy()
 
+    def init_reps(self):
+        # TODO mod this from hardcoded with the device
+        self.reps = nn.Parameter(F.normalize(torch.randn(self.N*self.k, self.emb_size, dtype=torch.float).cuda()))
+
     # set reps some class or  all class
     def set_reps(self, reps, start=None, stop=None):
         if start is not None and stop is not None:
@@ -150,8 +153,14 @@ def make_one_hot(labels, n_classes):
     :param n_classes: the number of classes
     :return: a one hot vector with these class labels
     """
-    one_hot = torch.zeros((labels.size(-1), n_classes))
-    return one_hot.scatter_(1, torch.unsqueeze(labels, 1).long().cpu(), 1).byte()
+    one_hot = torch.zeros((labels.size(-1), n_classes),dtype=labels.dtype)
+
+    lables_src = torch.where(labels >= 1, torch.ones(labels.shape,dtype=labels.dtype).cuda(), torch.zeros(labels.shape,dtype=labels.dtype).cuda())
+    lables_src =  torch.unsqueeze(lables_src, 1).cpu()
+
+    lable_index = torch.where(labels >= 1, labels - 1, torch.zeros(labels.shape,dtype=labels.dtype).cuda()).long()
+
+    return one_hot.scatter_(1, torch.unsqueeze(lable_index, 1).long().cpu(), lables_src).byte()
 
 
 def cross_entropy(pred, label, weight=None, reduction='mean', avg_factor=None):
