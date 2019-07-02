@@ -30,7 +30,7 @@ class OHEMSampler(BaseSampler):
                 feats[:self.bbox_roi_extractor.num_inputs], rois)
             cls_score, _ = self.bbox_head(bbox_feats)
             loss = self.bbox_head.loss(
-                cls_score=cls_score,
+                cls_score=bbox_feats,
                 bbox_pred=None,
                 labels=labels,
                 label_weights=cls_score.new_ones(cls_score.size(0)),
