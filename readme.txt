@@ -1,0 +1,1 @@
+./tools/dist_train.sh ./configs/dcn/faster_rcnn_mdconv_c3-c5_r50_fpn_1x.py  4
