@@ -104,7 +104,7 @@ class RepMetLoss(nn.Module):
 
         # avg_factor=None can keeep means() loss
         loss_class = self.lossclass_weight * cross_entropy(probs_back, target,
-                                   weight=self.lossclass_weight,
+                                   weight=None,
                                    reduction='mean', avg_factor=None)
 
         total_loss = self.loss_weight * (loss_distanc + loss_class)

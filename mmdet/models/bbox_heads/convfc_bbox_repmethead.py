@@ -223,7 +223,7 @@ class SharedFCRepMetBBoxHead(ConvFCBBoxRepMetHead):
             num_shared_convs=0,
             num_shared_fcs=num_fcs,
             num_cls_convs=0,
-            num_cls_fcs=0,
+            num_cls_fcs=1,
             num_reg_convs=0,
             num_reg_fcs=0,
             fc_out_channels=fc_out_channels,
