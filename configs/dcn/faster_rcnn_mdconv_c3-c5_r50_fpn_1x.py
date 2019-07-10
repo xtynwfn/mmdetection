@@ -1,8 +1,8 @@
 # model settings
 model = dict(
     type='FasterRCNN',
-    # pretrained='checkpoints/faster_rcnn_mdconv_c3-c5_r50_fpn_1x.pth',
-    pretrained='modelzoo://resnet50',
+    pretrained='checkpoints/resnet50-19c8e357.pth',
+    # pretrained='modelzoo://resnet50',
     backbone=dict(
         type='ResNet',
         depth=50,
@@ -47,7 +47,7 @@ model = dict(
         reg_class_agnostic=False,
         loss_cls=dict(k=5,
                      type='RepMetLoss',
-                     use_sigmoid=False,
+                     use_sigmoid=True,
                      loss_weight=1.0),
         loss_bbox=dict(type='SmoothL1Loss', beta=1.0, loss_weight=1.0)))
 # model training and testing settings
@@ -169,10 +169,10 @@ log_config = dict(
     ])
 # yapf:enable
 # runtime settings
-total_epochs = 12
+total_epochs = 24
 dist_params = dict(backend='nccl')
 log_level = 'DEBUG'
 work_dir = './work_dirs/faster_rcnn_mdconv_c3-c5_r50_fpn_1x'
 load_from = None
-resume_from = 'None'# 'work_dirs/faster_rcnn_mdconv_c3-c5_r50_fpn_1x/latest.pth'
+resume_from = None # 'work_dirs/faster_rcnn_mdconv_c3-c5_r50_fpn_1x/latest.pth'
 workflow = [('train', 1)]

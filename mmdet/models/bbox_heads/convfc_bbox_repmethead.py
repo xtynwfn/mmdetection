@@ -58,7 +58,7 @@ class ConvFCBBoxRepMetHead(BBoxRepMetHead):
         # add cls specific branch
         self.cls_convs, self.cls_fcs, self.cls_last_dim = \
             self._add_conv_fc_branch(
-                self.num_cls_convs, self.num_cls_fcs, self.shared_out_channels)
+                self.num_cls_convs, self.num_cls_fcs, self.shared_out_channels,False,256)
 
         # add reg specific branch
         self.reg_convs, self.reg_fcs, self.reg_last_dim = \
@@ -86,7 +86,8 @@ class ConvFCBBoxRepMetHead(BBoxRepMetHead):
                             num_branch_convs,
                             num_branch_fcs,
                             in_channels,
-                            is_shared=False):
+                            is_shared=False,
+                            cls_fc_out=0):
         """Add shared or separable branch
 
         convs -> avg pool (optional) -> fcs
@@ -116,11 +117,22 @@ class ConvFCBBoxRepMetHead(BBoxRepMetHead):
                     or self.num_shared_fcs == 0) and not self.with_avg_pool:
                 last_layer_dim *= (self.roi_feat_size * self.roi_feat_size)
             for i in range(num_branch_fcs):
-                fc_in_channels = (
-                    last_layer_dim if i == 0 else self.fc_out_channels)
-                branch_fcs.append(
-                    nn.Linear(fc_in_channels, self.fc_out_channels))
-            last_layer_dim = self.fc_out_channels
+                # fc_in_channels = (last_layer_dim if i == 0 else self.fc_out_channels)
+
+                if i == 0 :
+                    fc_in_channels = last_layer_dim
+                elif cls_fc_out > 0:
+                    fc_in_channels = cls_fc_out
+                else:
+                    fc_in_channels = self.fc_out_channels
+
+                fc_out_channels_temp = self.fc_out_channels
+                if cls_fc_out > 0:
+                    fc_out_channels_temp = cls_fc_out
+
+                branch_fcs.append(nn.Linear(fc_in_channels, fc_out_channels_temp))
+                branch_fcs.append(nn.BatchNorm1d(fc_out_channels_temp))
+            last_layer_dim = fc_out_channels_temp
         return branch_convs, branch_fcs, last_layer_dim
 
     def init_weights(self):
@@ -149,8 +161,11 @@ class ConvFCBBoxRepMetHead(BBoxRepMetHead):
             if self.with_avg_pool:
                 x = self.avg_pool(x)
             x = x.view(x.size(0), -1)
-            for fc in self.shared_fcs:
-                x = self.relu(fc(x))
+            # for fc in self.shared_fcs:
+            #   x = self.relu(fc(x))
+
+            for indx in range(len(self.shared_fcs)//2):
+                x = self.relu(self.shared_fcs[2*indx+1](self.shared_fcs[2*indx](x)))
         # separate branches
         x_cls = x
 
@@ -161,9 +176,11 @@ class ConvFCBBoxRepMetHead(BBoxRepMetHead):
             if self.with_avg_pool:
                 x_cls = self.avg_pool(x_cls)
             x_cls = x_cls.view(x_cls.size(0), -1)
-        for fc in self.cls_fcs:
-            x_cls = self.relu(fc(x_cls))
+        # for fc in self.cls_fcs:
+        #    x_cls = self.relu(fc(x_cls))
 
+        for indx in range(len(self.cls_fcs)//2):
+            x_cls = nn.functional.normalize(self.cls_fcs[2*indx+1](self.cls_fcs[2*indx](x_cls)))
         # get class probobility
         # cls_score = self.fc_cls.inference(x_cls) if self.with_cls else None
         # python 2.7 vs python 3.6
@@ -185,8 +202,11 @@ class ConvFCBBoxRepMetHead(BBoxRepMetHead):
             if self.with_avg_pool:
                 x = self.avg_pool(x)
             x = x.view(x.size(0), -1)
-            for fc in self.shared_fcs:
-                x = self.relu(fc(x))
+            # for fc in self.shared_fcs:
+            #    x = self.relu(fc(x))
+
+            for indx in range(len(self.shared_fcs)//2):
+                x = self.relu(self.shared_fcs[2*indx+1](self.shared_fcs[2*indx](x)))
         # separate branches
         x_cls = x
         x_reg = x
@@ -197,9 +217,10 @@ class ConvFCBBoxRepMetHead(BBoxRepMetHead):
             if self.with_avg_pool:
                 x_cls = self.avg_pool(x_cls)
             x_cls = x_cls.view(x_cls.size(0), -1)
-        for fc in self.cls_fcs:
-            x_cls = self.relu(fc(x_cls))
-
+        # for fc in self.cls_fcs:
+        #    x_cls = self.relu(fc(x_cls))
+        for indx in range(len(self.cls_fcs)//2):
+            x_cls = nn.functional.normalize(self.cls_fcs[2*indx+1](self.cls_fcs[2*indx](x_cls)))
         for conv in self.reg_convs:
             x_reg = conv(x_reg)
         if x_reg.dim() > 2:

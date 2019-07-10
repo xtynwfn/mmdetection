@@ -103,10 +103,10 @@ class RepMetLoss(nn.Module):
         probs_back = torch.cat((back_p.unsqueeze(-1),hard_probs), 1)
 
         # avg_factor=None can keeep means() loss
-        loss_class = self.lossclass_weight * cross_entropy(probs_back, target,
-                                   weight=None,
-                                   reduction='mean', avg_factor=None)
-
+        loss_class = self.lossclass_weight * F.nll_loss(probs_back.log(), target)
+        # loss_class = self.lossclass_weight * binary_cross_entropy(probs_back, target,eight=None,reduction='mean', avg_factor=None)
+        # print("loss_distanc", loss_distanc)
+        # print("loss_class",   loss_class)
         total_loss = self.loss_weight * (loss_distanc + loss_class)
 
         # _, pred = soft_probs.max(1)
@@ -172,4 +172,35 @@ def cross_entropy(pred, label, weight=None, reduction='mean', avg_factor=None):
     loss = weight_reduce_loss(
         loss, weight=weight, reduction=reduction, avg_factor=avg_factor)
     return loss
+
+def binary_cross_entropy(pred,
+                         label,
+                         weight=None,
+                         reduction='mean',
+                         avg_factor=None):
+    if pred.dim() != label.dim():
+        label, weight = _expand_binary_labels(label, weight, pred.size(-1))
+
+    # weighted element-wise losses
+    if weight is not None:
+        weight = weight.float()
+    loss = F.binary_cross_entropy_with_logits(
+        pred, label.float(), weight, reduction='none')
+    # do the reduction for the weighted loss
+    loss = weight_reduce_loss(loss, reduction=reduction, avg_factor=avg_factor)
+
+    return loss
+
+
+def _expand_binary_labels(labels, label_weights, label_channels):
+    bin_labels = labels.new_full((labels.size(0), label_channels), 0)
+    inds = torch.nonzero(labels >= 1).squeeze()
+    if inds.numel() > 0:
+        bin_labels[inds, labels[inds] - 1] = 1
+    if label_weights is None:
+        bin_label_weights = None
+    else:
+        bin_label_weights = label_weights.view(-1, 1).expand(
+            label_weights.size(0), label_channels)
+    return bin_labels, bin_label_weights
 
