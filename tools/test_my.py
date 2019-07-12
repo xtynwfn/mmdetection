@@ -42,7 +42,7 @@ def test2():
     bbox_head_dic=dict(type='SharedFCRepMetBBoxHead')
 
     # bbox_head = build_head(bbox_head_dic)
-    # import pdb;pdb.set_trace()
+    import pdb;pdb.set_trace()
     # pdb.set_trace()
     bbox_head = SharedFCRepMetBBoxHead().to('cuda:0')
     bbox_head.init_weights()
@@ -52,9 +52,9 @@ def test2():
 
     input = torch.autograd.Variable(sample_feature_rois.cuda(), requires_grad=True)
     cls_score, bbox_pred = bbox_head.forward(input)
-    print('cls_score:',cls_score)
-    print('bbox_pred shape :', bbox_pred.shape)
-    print('bbox_pred:', bbox_pred)
+    #print('cls_score:',cls_score)
+    #print('bbox_pred shape :', bbox_pred.shape)
+    #print('bbox_pred:', bbox_pred)
 
     label_weights = torch.rand(4).cuda()
     bbox_targets = torch.rand(4, 4).cuda()

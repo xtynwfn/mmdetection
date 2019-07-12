@@ -47,6 +47,8 @@ class RepMetLoss(nn.Module):
         # n_sample * (N_classes+1)
         probs_withback = torch.cat((back_p.unsqueeze(-1),hard_probs), 1)
         # cls_score, pred = probs_withback.max(1)
+        # print("pred:",pred)
+        # print("cls_score:",cls_score)
         return  probs_withback
 
     def forward(self, input, target):
@@ -105,10 +107,13 @@ class RepMetLoss(nn.Module):
         # avg_factor=None can keeep means() loss
         loss_class = self.lossclass_weight * F.nll_loss(probs_back.log(), target)
         # loss_class = self.lossclass_weight * binary_cross_entropy(probs_back, target,eight=None,reduction='mean', avg_factor=None)
-        # print("loss_distanc", loss_distanc)
-        # print("loss_class",   loss_class)
+        """
+        print("loss_distanc", loss_distanc)
+        print("loss_class",   loss_class)
+        print("target",target)
+        print("probs_back:",probs_back)
+        """
         total_loss = self.loss_weight * (loss_distanc + loss_class)
-
         # _, pred = soft_probs.max(1)
         # acc = pred.eq(target.squeeze()).float().mean()
 
